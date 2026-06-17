@@ -11,14 +11,6 @@ if "rdv_db" not in st.session_state:
 # --- DONNÉES DU SALON ---
 NB_EMPLOYES = 3
 
-PRESTATIONS = {
-    "Coupe & Brushing": {"duree": 60, "prix": "30€"},
-    "Tresses Africaines": {"duree": 120, "prix": "70€"},
-    "Manucure / Ongles": {"duree": 60, "prix": "25€"},
-    "Coloration": {"duree": 120, "prix": "50€"},
-    "Soin Capillaire": {"duree": 30, "prix": "20€"},
-}
-
 # --- FONCTIONS UTILES ---
 def est_ouvert(date_choisie):
     """Vérifie si le salon est ouvert et retourne les heures de début et de fin."""
@@ -53,7 +45,7 @@ def generer_creneaux(date_choisie, duree_minutes):
                 if not (fin_rdv_propose <= rdv["debut"] or debut_rdv_propose >= rdv["fin"]):
                     simultane += 1
 
-        # Si on a moins de RDV en cours que de coiffeurs dispos, le créneau est libre !
+        # Si on a moins de RDV en cours que d'employés dispos, le créneau est libre !
         if simultane < NB_EMPLOYES:
             creneaux_dispo.append(heure_actuelle.time())
         
@@ -64,25 +56,28 @@ def generer_creneaux(date_choisie, duree_minutes):
 
 # --- INTERFACE UTILISATEUR ---
 st.title("💇‍♀️ Prendre Rendez-vous")
-st.write("Réservez votre prestation en quelques clics. Notre équipe de 3 expertes est à votre disposition !")
+st.write("Réservez votre prestation personnalisée. Notre équipe de 3 expertes est à votre disposition !")
 
 st.divider()
 
 # 1. Informations client
 col1, col2 = st.columns(2)
 with col1:
-    nom = st.text_input("Nom & Prénom")
+    nom = st.text_input("Nom & Prénom du client")
 with col2:
-    telephone = st.text_input("Téléphone")
+    telephone = st.text_input("Numéro de téléphone")
 
-# 2. Choix de la prestation
-prestation_choisie = st.selectbox(
-    "Choisissez une prestation :", 
-    options=list(PRESTATIONS.keys()),
-    format_func=lambda x: f"{x} ({PRESTATIONS[x]['duree']} min - {PRESTATIONS[x]['prix']})"
-)
+# 2. Entrée libre de la prestation et de sa durée
+st.write("### Détails de la prestation")
+prestation_choisie = st.text_input("Quelle est la prestation ? (ex: Coiffure mariage, Teinture, Tresses complexes...)")
 
-duree_presta = PRESTATIONS[prestation_choisie]["duree"]
+col_durée, col_prix = st.columns(2)
+with col_durée:
+    duree_presta = st.number_input("Durée estimée (en minutes) :", min_value=15, max_value=360, value=60, step=15)
+with col_prix:
+    prix_presta = st.text_input("Prix ou budget estimé (Optionnel) :", value="À négocier")
+
+st.divider()
 
 # 3. Choix de la date
 date_rdv = st.date_input("Date du rendez-vous :", min_value=datetime.date.today())
@@ -92,36 +87,39 @@ ouvert, _, _ = est_ouvert(date_rdv)
 
 if not ouvert:
     st.error("Désolé, le salon est fermé le lundi. Veuillez choisir un autre jour.")
+elif not prestation_choisie:
+    st.info("Veuillez écrire le nom de la prestation ci-dessus pour afficher les horaires disponibles.")
 else:
-    # 4. Choix de l'heure (dynamique selon les dispo)
-    creneaux_libres = generer_creneaux(date_rdv, duree_presta)
+    # 4. Choix de l'heure (dynamique selon les dispo et la durée entrée)
+    creneaux_libres = generer_creneaux(date_rdv, int(duree_presta))
     
     if not creneaux_libres:
-        st.warning("Désolé, plus aucun créneau n'est disponible pour cette prestation à cette date.")
+        st.warning("Désolé, plus aucun créneau n'est disponible pour cette durée à cette date.")
     else:
-        heure_rdv = st.selectbox("Heures disponibles :", options=creneaux_libres, format_func=lambda x: x.strftime("%H:%h"))
+        heure_rdv = st.selectbox("Heures disponibles :", options=creneaux_libres, format_func=lambda x: x.strftime("%H:%M"))
         
         # Bouton de validation
         if st.button("Confirmer le rendez-vous", type="primary"):
             if not nom or not telephone:
-                st.error("Veuillez remplir votre nom et votre numéro de téléphone.")
+                st.error("Veuillez remplir le nom et le numéro de téléphone du client.")
             else:
                 # Calcul des heures exactes de début et de fin
                 dt_debut = datetime.datetime.combine(date_rdv, heure_rdv)
-                dt_fin = dt_debut + datetime.timedelta(minutes=duree_presta)
+                dt_fin = dt_debut + datetime.timedelta(minutes=int(duree_presta))
                 
                 # Enregistrement du RDV
                 nouveau_rdv = {
                     "client": nom,
                     "tel": telephone,
                     "prestation": prestation_choisie,
+                    "prix": prix_presta,
                     "date": date_rdv,
                     "debut": dt_debut,
                     "fin": dt_fin
                 }
                 st.session_state.rdv_db.append(nouveau_rdv)
                 
-                st.success(f"🎉 Rendez-vous confirmé pour {nom} ! Prestation : {prestation_choisie} le {date_rdv.strftime('%d/%m/%Y')} à {heure_rdv.strftime('%H:%M')}.")
+                st.success(f"🎉 Rendez-vous enregistré pour {nom} ! Prestation : {prestation_choisie} ({duree_presta} min) le {date_rdv.strftime('%d/%m/%Y')} à {heure_rdv.strftime('%H:%M')}.")
 
 # --- SECTION ADMIN (POUR VOIR LES RDV PRIS) ---
 st.divider()
@@ -130,4 +128,4 @@ with st.expander("Voir l'agenda du salon (Zone Admin)"):
         st.info("Aucun rendez-vous pour le moment.")
     else:
         for r in st.session_state.rdv_db:
-            st.write(f"📅 **{r['date'].strftime('%d/%m/%Y')}** | ⏰ {r['debut'].strftime('%H:%M')} - {r['fin'].strftime('%H:%M')} : **{r['client']}** ({r['prestation']}) - 📞 {r['tel']}")
+            st.write(f"📅 **{r['date'].strftime('%d/%m/%Y')}** | ⏰ {r['debut'].strftime('%H:%M')} - {r['fin'].strftime('%H:%M')} : **{r['client']}** — *{r['prestation']}* ({r['prix']}) - 📞 {r['tel']}")
